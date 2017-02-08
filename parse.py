@@ -2,6 +2,8 @@ import FileReader as fr
 import xml.etree.cElementTree as ET
 import pickle
 
+from bitstring import Bits
+
 __author__ = "Hussein Kaddoura"
 __copyright__ = "Copyright 2013, Hussein Kaddoura"
 __credits__ = ["Hussein Kaddoura"]
@@ -23,6 +25,9 @@ victories = { 1: "VICTORY_TIME",
               5: "VICTORY_DIPLOMATIC",
 }
 
+v_opt = True
+def verbose(string, verboseOn=v_opt):
+    if (v_opt): print string
 def parse(filename):
     """ Parses the save file and transforms it to xml    """
     root = ET.Element("root")
@@ -51,37 +56,52 @@ def parse_base(fileReader, xml):
     version.set('build', fileReader.read_string())
 
     game = ET.SubElement(base, 'game')
-    game.set('currentturn', str(fileReader.read_int()))
-
+    currentturn = str(fileReader.read_int())
+    game.set('currentturn', currentturn)
+    verbose("current turn: " + currentturn)
     fileReader.skip_bytes(1) #TODO: I'll investigate later as to what this byte hold
 
     civilization = ET.SubElement(base, 'civilization')
     civilization.text = fileReader.read_string()
+    verbose("civilization: " + civilization.text)
 
     handicap = ET.SubElement(base, 'handicap')
     handicap.text = fileReader.read_string()
+    verbose("handicap: " + handicap.text)
 
     era = ET.SubElement(base, 'era')
-    era.set('starting', fileReader.read_string())
-    era.set('current', fileReader.read_string())
+    startingEra = fileReader.read_string()
+    currentEra = fileReader.read_string()
+    era.set('starting', startingEra)
+    era.set('current', currentEra)
+    verbose("staring era: " + startingEra)
+    verbose("current era: " + currentEra)
+
 
     gamespeed = ET.SubElement(base, 'gamespeed')
     gamespeed.text = fileReader.read_string()
+    verbose("game speed: " + gamespeed.text)
 
     worldsize = ET.SubElement(base, 'worldsize')
     worldsize.text = fileReader.read_string()
+    verbose("worldsize: " + worldsize.text)
 
     mapscript = ET.SubElement(base, 'mapscript')
     mapscript.text = fileReader.read_string()
+    verbose("mapscript: " + mapscript.text)
 
     fileReader.skip_bytes(4) #TODO: an int
     #
     dlcs = ET.SubElement(base, 'dlcs')
-    while fileReader.peek_int() != 0:
+    while fileReader.peek_int() > 2**8:
         fileReader.skip_bytes(16) #TODO: some binary data
         fileReader.skip_bytes(4) #TODO: seems to be always 1
+  
         dlc = ET.SubElement(dlcs, 'dlc')
+     
         dlc.text = fileReader.read_string()
+        verbose("dlc: " + dlc.text)
+    
     #
     # #Extract block position (separated by \x40\x00\x00\x00 (@) )
     # #I haven't decoded what each of these blocks mean but I'll extract their position for the time being.
@@ -92,14 +112,14 @@ def parse_base(fileReader, xml):
     #block 1
     fileReader.pos = bit_block_position[0] + 32 #remove the delimiter (@)
     block1 = tuple(map(lambda x: x.read(32).intle, fileReader.read_bytes(152).cut(32)))
-
     #TODO: block2 - seems to only contain Player 1?
 
     #block3
+    #TODO: Fix leader traits
     #contains the type of civilization - 03 human, 01 alive, 04 missing, 02 dead
     fileReader.pos = bit_block_position[2] + 32
     leader_traits = tuple(map(lambda x: x.read(32).intle, fileReader.read_bytes(256).cut(32)))
-
+    
     #TODO: block4
     #TODO: block5
     #TODO: block6
@@ -107,18 +127,24 @@ def parse_base(fileReader, xml):
     #block 7
     # contains the list of civilizations
     civilizations = fileReader.read_strings_from_block(bit_block_position[6] + 32, bit_block_position[7])
+    
 
     #block 8
     #contains the list of leaders
     leaders = fileReader.read_strings_from_block(bit_block_position[7] + 32, bit_block_position[8], True)
 
+    for i in range(len(block1)):
+        verbose("civilizations: {0}\t leader: {1}"
+                .format(civilizations[i], leaders[i]))
+    
     #TODO: block9-18
 
     #block 19
     # contains the civ states. There seems to be a whole bunch of leading 0s.
     fileReader.forward_to_first_non_zero_byte(bit_block_position[18] + 32, bit_block_position[19])
-    civStates = fileReader.read_strings_from_block(fileReader.pos, bit_block_position[19], True)
-
+    civStates = fileReader.read_strings_from_block(fileReader.bits.pos, bit_block_position[19], True)
+    for cs in civStates:
+        verbose("city states: " + cs)
     #TODO: block 20 - there's a 16 byte long list of 01's
     #TODO: block 21 - seems to be FFs
     #TODO: block 22, 23 - 00s
@@ -129,18 +155,25 @@ def parse_base(fileReader, xml):
     #the last 5 bytes contain the enabled victory types
     fileReader.pos = bit_block_position[28] - 5*8
     victorytypes = (fileReader.read_byte(), fileReader.read_byte(), fileReader.read_byte(), fileReader.read_byte(), fileReader.read_byte() )
+    verbose("victory type: " + str(victorytypes))
 
     #block 29
     # have the game options
-    fileReader.find(b'GAMEOPTION', bit_block_position[28]+32, bit_block_position[29])
+    
+    fileReader.find(Bits(bytes=b'GAMEOPTION'), bit_block_position[28] + 32, bit_block_position[29])
+    
     fileReader.pos -= 32
+    
     gameoptions = []
-    while fileReader.pos < bit_block_position[29]:
-        s = fileReader.read_string()
-        if s == "":
-            break
-        state = fileReader.read_int()
-        gameoptions.append((s, state))
+
+    #TODO: Fix bug
+##    while fileReader.pos < bit_block_position[29]:
+##        s = fileReader.read_string()
+##        if s == "":
+##            break
+##        state = fileReader.read_int()
+##        verbose(s + ": " + state)
+##        gameoptions.append((s, state))
 
     #TODO: block 30-31
 
@@ -154,7 +187,7 @@ def parse_base(fileReader, xml):
         if civ[1] != 4:
             civXml = ET.SubElement(civsXml, 'civilization')
             civXml.set('name', civ[0])
-            civXml.set('trait', traits[civ[1]])
+            ##civXml.set('trait', civ[1])
             civXml.set('leader', civ[2])
 
     civStatesXml = ET.SubElement(base, 'civStates')
@@ -277,3 +310,4 @@ def parse_compressed_payload(fileReader, xml):
 if __name__ == "__main__":
     import sys
     parse(sys.argv[1])
+    
