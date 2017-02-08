@@ -90,7 +90,7 @@ def parse_base(fileReader, xml):
     verbose("mapscript: " + mapscript.text)
 
     fileReader.skip_bytes(4) #TODO: an int
-    #
+    #Extracting the DLC
     dlcs = ET.SubElement(base, 'dlcs')
     while fileReader.peek_int() > 2**8:
         fileReader.skip_bytes(16) #TODO: some binary data
@@ -102,10 +102,10 @@ def parse_base(fileReader, xml):
         verbose("dlc: " + dlc.text)
 
 
+    ##Extracting the mods
     fileReader.skip_bytes(4)
     mod = ET.SubElement(base, 'mod')
     while fileReader.peek_int() !=0:
-        
         if (fileReader.peek_int() < 2**8):
             modId = fileReader.read_string()
             fileReader.skip_bytes(4)
@@ -114,9 +114,7 @@ def parse_base(fileReader, xml):
             mod.set('modname', modName)
 
             
-            verbose("mod name: " + modName)
-            verbose("mod id: " + modId)
-            
+            verbose(modId + "\t" + modName)
             
         else:
             fileReader.skip_bytes(4)
@@ -183,18 +181,21 @@ def parse_base(fileReader, xml):
     
     fileReader.find(Bits(bytes=b'GAMEOPTION'), bit_block_position[28] + 32, bit_block_position[29])
     
-    fileReader.pos -= 32
+    fileReader.bits.pos -= 32
     
     gameoptions = []
 
-    #TODO: Fix bug
-##    while fileReader.pos < bit_block_position[29]:
-##        s = fileReader.read_string()
-##        if s == "":
-##            break
-##        state = fileReader.read_int()
-##        verbose(s + ": " + state)
-##        gameoptions.append((s, state))
+    while fileReader.pos < bit_block_position[29]:
+        s = fileReader.read_string()
+        if s == "":
+            break
+        state = fileReader.read_int()
+        verbose(s + ": " + str(state))
+        gameoptions.append((s, state))
+        ##Not sure what the rest is. Might have to do with mods
+        if (s == "GAMEOPTION_DYNAMIC_TURNS"):
+            break
+   
 
     #TODO: block 30-31
 
@@ -330,9 +331,9 @@ def parse_compressed_payload(fileReader, xml):
 
 if __name__ == "__main__":
     import sys
-    f_name = sys.argv[1]
-    
-    if (len(sys.argv) ==3): v_opt = int(sys.argv[2])
-    
+    #f_name = sys.argv[1]
+    #if (len(sys.argv) ==3): v_opt = int(sys.argv[2])
+    f_name = "saves/Nebuchadnezzar II_0800 AD-1781.Civ5Save"
+    v_opt = True
     parse(f_name, v_opt)
     
