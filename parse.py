@@ -24,11 +24,10 @@ victories = { 1: "VICTORY_TIME",
               4: "VICTORY_CULTURAL",
               5: "VICTORY_DIPLOMATIC",
 }
-
-v_opt = True
+v_opt = False
 def verbose(string, verboseOn=v_opt):
     if (v_opt): print string
-def parse(filename):
+def parse(filename, v_opt):
     """ Parses the save file and transforms it to xml    """
     root = ET.Element("root")
 
@@ -101,6 +100,28 @@ def parse_base(fileReader, xml):
      
         dlc.text = fileReader.read_string()
         verbose("dlc: " + dlc.text)
+
+
+    fileReader.skip_bytes(4)
+    mod = ET.SubElement(base, 'mod')
+    while fileReader.peek_int() !=0:
+        
+        if (fileReader.peek_int() < 2**8):
+            modId = fileReader.read_string()
+            fileReader.skip_bytes(4)
+            modName = fileReader.read_string()
+            era.set('modid', modId)
+            mod.set('modname', modName)
+
+            
+            verbose("mod name: " + modName)
+            verbose("mod id: " + modId)
+            
+            
+        else:
+            fileReader.skip_bytes(4)
+            
+       
     
     #
     # #Extract block position (separated by \x40\x00\x00\x00 (@) )
@@ -309,5 +330,9 @@ def parse_compressed_payload(fileReader, xml):
 
 if __name__ == "__main__":
     import sys
-    parse(sys.argv[1])
+    f_name = sys.argv[1]
+    
+    if (len(sys.argv) ==3): v_opt = int(sys.argv[2])
+    
+    parse(f_name, v_opt)
     
