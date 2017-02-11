@@ -86,8 +86,8 @@ class FileReader:
             self.bits.pos = pos
 
             #read the start of the stream into a buffer.
-            if (self.bits.length - self.pos) < 8*2**12:
-                readSize = int((self.bits.length - self.pos) / 8)
+            if (self.bits.length - self.bits.pos) < 8*2**12:
+                readSize = int((self.bits.length - self.bits.pos) / 8)
 
             buf = self.bits.read('bytes:{0}'.format(readSize))
             zo = zlib.decompressobj()
@@ -99,8 +99,8 @@ class FileReader:
                 continue
 
             while zo.unused_data == b'' and readSize >= 2**12:
-                if (self.bits.length - self.pos) < 8*2**12:
-                    readSize = int((self.bits.length - self.pos) / 8)
+                if (self.bits.length - self.bits.pos) < 8*2**12:
+                    readSize = int((self.bits.length - self.bits.pos) / 8)
 
                 block = self.bits.read('bytes:{0}'.format(readSize))
                 if len(block)> 0:
