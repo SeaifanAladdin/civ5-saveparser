@@ -16,6 +16,7 @@ __status__ = "Development"
 traits = { 1:"alive",
            3: "human",
            2: "dead",
+           4: "missing"
 }
 
 victories = { 1: "VICTORY_TIME",
@@ -35,8 +36,8 @@ def parse(filename, v_opt):
         parse_base(civ5Save, root)
         parse_compressed_payload(civ5Save, root)
 
-    tree = ET.ElementTree(root)
-    tree.write(filename + '.transformed.xml')
+    #tree = ET.ElementTree(root)
+    #tree.write(filename + '.transformed.xml')
 
 def parse_base(fileReader, xml):
     """
@@ -129,16 +130,17 @@ def parse_base(fileReader, xml):
     #32 blocks have been found. We'll try to map them one at a time.
 
     #block 1
-    fileReader.pos = bit_block_position[0] + 32 #remove the delimiter (@)
+    fileReader.bits.pos = bit_block_position[0] + 32 #remove the delimiter (@)
     block1 = tuple(map(lambda x: x.read(32).intle, fileReader.read_bytes(152).cut(32)))
+    
+
     #TODO: block2 - seems to only contain Player 1?
 
     #block3
     #TODO: Fix leader traits
     #contains the type of civilization - 03 human, 01 alive, 04 missing, 02 dead
-    fileReader.pos = bit_block_position[2] + 32
+    fileReader.bits.pos = bit_block_position[2] + 32
     leader_traits = tuple(map(lambda x: x.read(32).intle, fileReader.read_bytes(256).cut(32)))
-    
     #TODO: block4
     #TODO: block5
     #TODO: block6
@@ -152,10 +154,12 @@ def parse_base(fileReader, xml):
     #contains the list of leaders
     leaders = fileReader.read_strings_from_block(bit_block_position[7] + 32, bit_block_position[8], True)
 
-    for i in range(len(block1)):
-        verbose("civilizations: {0}\t leader: {1}"
-                .format(civilizations[i], leaders[i]))
-    
+    try:
+        for i in range(len(leader_traits)):
+            verbose("civilizations: {0}\t leader: {1}\t status: {2}"
+                    .format(civilizations[i], leaders[i], traits[leader_traits[i]]))
+    except:
+        pass
     #TODO: block9-18
 
     #block 19
@@ -172,9 +176,12 @@ def parse_base(fileReader, xml):
 
     #block 28
     #the last 5 bytes contain the enabled victory types
-    fileReader.pos = bit_block_position[28] - 5*8
+    fileReader.bits.pos = bit_block_position[28] - 5*8
     victorytypes = (fileReader.read_byte(), fileReader.read_byte(), fileReader.read_byte(), fileReader.read_byte(), fileReader.read_byte() )
-    verbose("victory type: " + str(victorytypes))
+    for i in range(len(victorytypes)):
+        v = victorytypes[i]
+        if v == 1:
+            verbose("victory type: " + victories[i + 1])
 
     #block 29
     # have the game options
@@ -185,7 +192,7 @@ def parse_base(fileReader, xml):
     
     gameoptions = []
 
-    while fileReader.pos < bit_block_position[29]:
+    while fileReader.bits.pos < bit_block_position[29]:
         s = fileReader.read_string()
         if s == "":
             break
@@ -209,7 +216,7 @@ def parse_base(fileReader, xml):
         if civ[1] != 4:
             civXml = ET.SubElement(civsXml, 'civilization')
             civXml.set('name', civ[0])
-            ##civXml.set('trait', civ[1])
+            civXml.set('trait', civ[1])
             civXml.set('leader', civ[2])
 
     civStatesXml = ET.SubElement(base, 'civStates')
@@ -229,28 +236,29 @@ def parse_base(fileReader, xml):
 
 def parse_compressed_payload(fileReader, xml):
     files = fileReader.extract_compressed_payloads()
-
     details = ET.SubElement(xml, 'details')
     with fr.FileReader(files[0]) as f:
         f.read_int() # 1?
+        f.read_int() # 66?
         f.read_int() # 0?
         f.read_int() #current turn, already extracted in the main save file
         f.read_int() # 0
         f.read_int() # 0
-        f.read_int() # -4000 : starting year?
+        verbose("starting year: " + str(f.read_int())) # -4000 : starting year?
         f.read_int() # 500  : max turn count?
         f.read_int() # 500 : max turn count?
         playedtime = f.read_int() # playing time in seconds + a last digit
 
         lastDigit = playedtime % 10
-        totalSeconds = int((playedtime - lastDigit) / 10)
-
-        hours, totalSeconds = divmod(totalSeconds , 3600)
-
-        minutes, seconds = divmod(totalSeconds, 60)
-        # seconds = (totalSeconds - hours * 3600 - minutes * 60)
-
-        # print(hours, minutes, seconds)
+        totalSeconds = playedtime/10
+        verbose("total seconds: " + str(totalSeconds))
+        hours = totalSeconds/3600
+        minutes = totalSeconds/60%60
+        seconds = totalSeconds%60
+        
+       
+        
+        verbose("time: {0} hours {1} minutes {2} seconds".format(hours,minutes, seconds))
 
         p = ET.SubElement(details,'timeplayed')
         p.set('hours', str(hours))
@@ -265,13 +273,17 @@ def parse_compressed_payload(fileReader, xml):
 
         #comes a list of string stuff.TODO: what do they refer to?
         nb_notes  = f.read_int()
+       
         ns = ET.SubElement(details, 'notes')
         for note in range(0, nb_notes):
             n = ET.SubElement(ns, "note")
             n.text = f.read_string()
+            
+            
+            
 
         #fast forward to another list skipping some unknown bytes for now
-        f.pos = f.find_first('0xC1F2439C016F26110F014A49D3CA01A564ABAD01')[0] + 20 * 8
+        f.bits.pos = f.find_first('0xC1F2439C016F26110F014A49D3CA01A564ABAD01')[0] + 20 * 8
 
         #skipping some 20 bytes long blocks
         nb = f.read_int()
@@ -284,6 +296,7 @@ def parse_compressed_payload(fileReader, xml):
         for i in range(0,nb_cities):
             cityXml = ET.SubElement(citiesXml, 'note')
             cityXml.text = f.read_string()
+            verbose("city notes: " + cityXml.text)
 
         #get some notes about great persons
         nb_great_persons = f.read_int()
@@ -291,16 +304,29 @@ def parse_compressed_payload(fileReader, xml):
         for i in range(0, nb_great_persons):
             gpXml = ET.SubElement(greatPersonsXml, 'note')
             gpXml.text = f.read_string()
+            verbose("Great Persons: " + gpXml.text)
+
+       
+        
+
+        f.skip_bytes(182)
+        
+        log = []
+        
+
+       
+          
+        
+        
 
         histograms = {}
         histogram_labels = {}
 
         # histograms data
         # it seems that a lot of this data has been poluted with FFs. I"ll remove them for now.
-        histograms_pos = f.findall(b'REPLAYDATASET_SCORE')
-
+        histograms_pos = f.findall(Bits(bytes=b'REPLAYDATASET_SCORE'))
         for pos in histograms_pos:
-            f.pos = pos + 19*8 #had to skip because of a bug somewhere. TODO: investigate
+            f.bits.pos = pos + 19*8 #had to skip because of a bug somewhere. TODO: investigate
             # data_sets = f.read_int()
             data_sets = 27 #1B. has to be hardcoded because of a bug somewhere TODO: investigate
 
@@ -324,7 +350,8 @@ def parse_compressed_payload(fileReader, xml):
                             turn = f.read_byte(skip=3)
                             value = f.read_byte(skip=3)
                             histograms[i][j][k] = value
-
+            
+           
             jar = open('histograms.{0}.pickle'.format(pos), 'wb')
             pickle.dump(histograms, jar)
             jar.close()
